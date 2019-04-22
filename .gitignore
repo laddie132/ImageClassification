@@ -102,3 +102,7 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+flower_photos
+flower_photos.tgz
+hub_modules
+data
