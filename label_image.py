@@ -73,16 +73,15 @@ def load_labels(label_file):
 
 
 if __name__ == "__main__":
-    file_name = "tensorflow/examples/label_image/data/grace_hopper.jpg"
-    model_file = \
-        "tensorflow/examples/label_image/data/inception_v3_2016_08_28_frozen.pb"
-    label_file = "tensorflow/examples/label_image/data/imagenet_slim_labels.txt"
+    file_name = "/home/lh/resize_weed_photos/Alizarin-calamus/IMG_20180322_171043.jpg"
+    model_file = "/home/lh/WeedClassification/outputs/weed-sample/frozen_graph.pb"
+    label_file = "/home/lh/WeedClassification/outputs/weed-sample/output_labels.txt"
     input_height = 299
     input_width = 299
     input_mean = 0
     input_std = 255
-    input_layer = "input"
-    output_layer = "InceptionV3/Predictions/Reshape_1"
+    input_layer = "Placeholder"
+    output_layer = "final_result"
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", help="image to be processed")
@@ -123,14 +122,14 @@ if __name__ == "__main__":
         input_mean=input_mean,
         input_std=input_std)
 
-    input_name = "import/" + input_layer
-    output_name = "import/" + output_layer
-    input_operation = graph.get_operation_by_name(input_name)
-    output_operation = graph.get_operation_by_name(output_name)
+    input_name = "import/" + input_layer + ':0'
+    output_name = "import/" + output_layer + ':0'
+    input_tensor = graph.get_tensor_by_name(input_name)
+    output_tensor = graph.get_tensor_by_name(output_name)
 
     with tf.Session(graph=graph) as sess:
-        results = sess.run(output_operation.outputs[0], {
-            input_operation.outputs[0]: t
+        results = sess.run(output_tensor, {
+            input_tensor: t
         })
     results = np.squeeze(results)
 
