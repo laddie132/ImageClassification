@@ -126,6 +126,7 @@ import os.path
 import random
 import re
 import sys
+from functools import reduce
 
 import json
 import numpy as np
@@ -145,7 +146,7 @@ FAKE_QUANT_OPS = ('FakeQuantWithMinMaxVars',
                   'FakeQuantWithMinMaxVarsPerChannel')
 
 
-def create_image_lists(image_dir, testing_percentage, validation_percentage):
+def create_image_lists(image_dir, testing_percentage, validation_percentage, oversampling_num=-1):
     """Builds a list of training images from the file system.
 
     Analyzes the sub folders in the image directory, splits them into stable
@@ -185,7 +186,7 @@ def create_image_lists(image_dir, testing_percentage, validation_percentage):
             continue
         tf.logging.info("Looking for images in '" + dir_name + "'")
         for extension in extensions:
-            file_glob = os.path.join(image_dir, dir_name, '*.' + extension)
+            file_glob = os.path.join(image_dir, dir_name, '[^.]*.' + extension)
             file_list.extend(tf.gfile.Glob(file_glob))
         if not file_list:
             tf.logging.warning('No files found')
@@ -198,34 +199,60 @@ def create_image_lists(image_dir, testing_percentage, validation_percentage):
                 'WARNING: Folder {} has more than {} images. Some images will '
                 'never be selected.'.format(dir_name, MAX_NUM_IMAGES_PER_CLASS))
         label_name = re.sub(r'[^a-z0-9]+', ' ', dir_name.lower())
-        training_images = []
-        testing_images = []
-        validation_images = []
-        for file_name in file_list:
-            base_name = os.path.basename(file_name)
-            # We want to ignore anything after '_nohash_' in the file name when
-            # deciding which set to put an image in, the data set creator has a way of
-            # grouping photos that are close variations of each other. For example
-            # this is used in the plant disease data set to group multiple pictures of
-            # the same leaf.
-            hash_name = re.sub(r'_nohash_.*$', '', file_name)
-            # This looks a bit magical, but we need to decide whether this file should
-            # go into the training, testing, or validation sets, and we want to keep
-            # existing files in the same set even if more files are subsequently
-            # added.
-            # To do that, we need a stable way of deciding based on just the file name
-            # itself, so we do a hash of that and then use that to generate a
-            # probability value that we use to assign it.
-            hash_name_hashed = hashlib.sha1(tf.compat.as_bytes(hash_name)).hexdigest()
-            percentage_hash = ((int(hash_name_hashed, 16) %
-                                (MAX_NUM_IMAGES_PER_CLASS + 1)) *
-                               (100.0 / MAX_NUM_IMAGES_PER_CLASS))
-            if percentage_hash < validation_percentage:
-                validation_images.append(base_name)
-            elif percentage_hash < (testing_percentage + validation_percentage):
-                testing_images.append(base_name)
+        # training_images = []
+        # testing_images = []
+        # validation_images = []
+        #
+        # for file_name in file_list:
+        #     base_name = os.path.basename(file_name)
+        #     # We want to ignore anything after '_nohash_' in the file name when
+        #     # deciding which set to put an image in, the data set creator has a way of
+        #     # grouping photos that are close variations of each other. For example
+        #     # this is used in the plant disease data set to group multiple pictures of
+        #     # the same leaf.
+        #     hash_name = re.sub(r'_nohash_.*$', '', file_name)
+        #     # This looks a bit magical, but we need to decide whether this file should
+        #     # go into the training, testing, or validation sets, and we want to keep
+        #     # existing files in the same set even if more files are subsequently
+        #     # added.
+        #     # To do that, we need a stable way of deciding based on just the file name
+        #     # itself, so we do a hash of that and then use that to generate a
+        #     # probability value that we use to assign it.
+        #     hash_name_hashed = hashlib.sha1(tf.compat.as_bytes(hash_name)).hexdigest()
+        #     percentage_hash = ((int(hash_name_hashed, 16) %
+        #                         (MAX_NUM_IMAGES_PER_CLASS + 1)) *
+        #                        (100.0 / MAX_NUM_IMAGES_PER_CLASS))
+        #     if percentage_hash < validation_percentage:
+        #         validation_images.append(base_name)
+        #     elif percentage_hash < (testing_percentage + validation_percentage):
+        #         testing_images.append(base_name)
+        #     else:
+        #         training_images.append(base_name)
+
+        # random split dataset
+        base_name_list = list(map(lambda x: os.path.basename(x),
+                                  file_list))
+        random.shuffle(base_name_list)
+        test_end = len(base_name_list) * testing_percentage // 100
+        valid_end = test_end + len(base_name_list) * validation_percentage // 100
+
+        testing_images = base_name_list[:test_end]
+        validation_images = base_name_list[test_end:valid_end]
+        training_images = base_name_list[valid_end:]
+
+        # oversampling
+        if oversampling_num > 0:
+            mulitple = oversampling_num // len(training_images)
+            if mulitple == 0:
+                random.shuffle(training_images)
+                training_images = training_images[:oversampling_num]
             else:
-                training_images.append(base_name)
+                oversampling_images = []
+                for _ in range(mulitple):
+                    oversampling_images += training_images
+                sample_images = random.sample(training_images, oversampling_num - len(oversampling_images))
+                training_images = oversampling_images + sample_images
+
         result[label_name] = {
             'dir': dir_name,
             'training': training_images,
@@ -807,7 +834,6 @@ def add_final_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
             final_tensor)
 
 
-# todo: top-3 acc
 def add_evaluation_step(result_tensor, ground_truth_tensor):
     """Inserts the operations we need to evaluate the accuracy of our results.
 
@@ -1045,7 +1071,7 @@ def main(_):
     if FLAGS.split_dataset:
         # Look at the folder structure, and create lists of all the images.
         image_lists = create_image_lists(FLAGS.image_dir, FLAGS.testing_percentage,
-                                         FLAGS.validation_percentage)
+                                         FLAGS.validation_percentage, FLAGS.oversampling_num)
         save_image_lists(image_lists)
     else:
         image_lists = load_image_lists()
@@ -1221,12 +1247,12 @@ if __name__ == '__main__':
         default='',
         help='Path to folders of labeled images.'
     )
-    parser.add_argument(
-        '--output_graph',
-        type=str,
-        default='/tmp/output_graph.pb',
-        help='Where to save the trained graph.'
-    )
+    # parser.add_argument(
+    #     '--output_graph',
+    #     type=str,
+    #     default='/tmp/output_graph.pb',
+    #     help='Where to save the trained graph.'
+    # )
     parser.add_argument(
         '--intermediate_output_graphs_dir',
         type=str,
@@ -1289,6 +1315,12 @@ if __name__ == '__main__':
         type=int,
         default=10,
         help='What percentage of images to use as a validation set.'
+    )
+    parser.add_argument(
+        '--oversampling_num',
+        type=int,
+        default=-1,
+        help='Oversamping number'
     )
     parser.add_argument(
         '--eval_step_interval',
@@ -1406,6 +1438,7 @@ if __name__ == '__main__':
     FLAGS, unparsed = parser.parse_known_args()
 
     setattr(FLAGS, 'output_labels', FLAGS.output_path + '/output_labels.txt')
+    setattr(FLAGS, 'output_graph', FLAGS.output_path + '/frozen_graph.pb')
     setattr(FLAGS, 'summaries_dir', FLAGS.output_path + '/retrain_logs/')
     setattr(FLAGS, 'bottleneck_dir', FLAGS.output_path + '/bottleneck/')
     setattr(FLAGS, 'saved_model_dir', FLAGS.output_path + '/saved_model/')
