@@ -69,7 +69,7 @@ def load_labels(label_file):
 if __name__ == '__main__':
     image_root_path = '/home/lh/resize_weed_photos/'
     output_path = '/home/lh/WeedClassification/outputs/weed-sample/'
-    image_list_file = output_path + "image_lists.json"
+    image_list_file = "data/weed_image_lists_sample.json"
     results_file = output_path + 'test_results.json'
     model_file = output_path + "frozen_graph.pb"
     label_file = output_path + "output_labels.txt"
@@ -91,6 +91,7 @@ if __name__ == '__main__':
     parser.add_argument("--input_std", type=int, help="input std")
     parser.add_argument("--input_layer", help="name of input layer")
     parser.add_argument("--output_layer", help="name of output layer")
+    parser.add_argument("--top_n", type=int, help='Top-n accuracy')
     args = parser.parse_args()
 
     if args.graph:
@@ -129,7 +130,7 @@ if __name__ == '__main__':
     output_results = {}
 
     for k, v in image_lists.items():
-        cur_result = {}
+        cur_result = {'dir': v['dir']}
 
         test_images = v['testing']
         dir_name = v['dir']
@@ -138,7 +139,7 @@ if __name__ == '__main__':
         image_tensor = read_tensor_from_image_list(images_path)
 
         results = sess.run(output_tensor,
-                          {input_tensor: image_tensor})
+                           {input_tensor: image_tensor})
 
         top_k = np.argsort(-results, axis=1)[:, :top_n]
 
@@ -146,7 +147,16 @@ if __name__ == '__main__':
         is_right = np.sum((top_k == ground_truth_id), axis=1) > 0
 
         wrong_idx = np.where(is_right == 0)[0].tolist()
-        cur_wrong_imgs = list(map(lambda x: test_images[x], wrong_idx))
+
+        cur_wrong_imgs = {}
+        for wid in wrong_idx:
+            wname = test_images[wid]
+            wpredict = top_k[wid].tolist()
+            wpredict_label = list(map(lambda x: labels[x], wpredict))
+            wpredict_prob = list(map(lambda x: '%.2f' % results[wid, x], wpredict))
+
+            cur_wrong_imgs[wname] = dict(zip(wpredict_label, wpredict_prob))
+
         cur_result['wrong_images'] = cur_wrong_imgs
 
         acc = sum(is_right) / len(test_images)
@@ -159,7 +169,7 @@ if __name__ == '__main__':
 
         output_results[k] = cur_result
 
-        print('%s with top-%d Acc: %.2f' % (k, top_n, acc*100))
+        print('%s with top-%d Acc: %.2f' % (k, top_n, acc * 100))
 
     with open(results_file, 'w') as wf:
         json.dump(output_results, wf, indent=2)
