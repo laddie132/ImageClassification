@@ -631,6 +631,11 @@ def variable_summaries(var):
         tf.summary.histogram('histogram', var)
 
 
+def add_final_hierarchial_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
+                          quantize_layer, is_training):
+    pass
+
+
 def add_final_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
                           quantize_layer, is_training):
     """Adds a new softmax and fully-connected layer for training and eval.
