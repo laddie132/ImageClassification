@@ -58,7 +58,7 @@ def read_tensor_from_image_list(file_names,
 
 if __name__ == '__main__':
     test_image_path = 'data/test_weed.jpg'
-    output_path = '/home/lh/WeedClassification/outputs/weed-sample/'
+    output_path = 'outputs/weed-sample/'
     model_file = output_path + "frozen_graph.pb"
     input_height = 299
     input_width = 299
