@@ -26,8 +26,8 @@ if __name__ == "__main__":
     label_file = "outputs/weed-sample/output_labels.txt"
     model_name = "default"
     model_version = 2
-    enable_ssl = False
-    ip = '39.104.176.42'
+    enable_ssl = True
+    ip = 'www.cropphoto.cn'
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", help="image to be processed")
