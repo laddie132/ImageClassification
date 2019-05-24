@@ -67,9 +67,9 @@ def load_labels(label_file):
 
 
 if __name__ == '__main__':
-    image_root_path = '/home/lh/resize_weed_photos/'
+    image_root_path = '/home/lh/weed_photos_resize/'
     output_path = '/home/lh/WeedClassification/outputs/weed-sample/'
-    image_list_file = "data/weed_image_lists_sample.json"
+    image_list_file = "data/weed_image_lists_oversample.json"
     results_file = output_path + 'test_results.json'
     model_file = output_path + "frozen_graph.pb"
     label_file = output_path + "output_labels.txt"

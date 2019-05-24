@@ -1153,10 +1153,10 @@ if __name__ == '__main__':
         help='Where to save the output results.'
     )
     parser.add_argument(
-        '--split_dataset',
-        default=False,
-        action='store_true',
-        help='Whether manual split the dataset to train/valid/test.'
+        '--image_lists_dir',
+        type=str,
+        default='data/weed_image_lists_oversample.json',
+        help='Where to load image list.'
     )
     # parser.add_argument(
     #     '--output_labels',
