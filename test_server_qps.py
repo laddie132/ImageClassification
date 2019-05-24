@@ -127,6 +127,8 @@ if __name__ == '__main__':
         if i % 10 == 0:
             print('No.%d testing time: %.2f(s)' % (i, t2-t1))
 
+    qps = test_iter_num / ave_time
     ave_time /= test_iter_num
 
     print('Per image ave test cost time: %.2f(s)' % ave_time)
+    print('QPS: %.2f' % qps)

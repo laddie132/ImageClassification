@@ -72,3 +72,21 @@ if __name__ == "__main__":
     for i in range(top_k):
         idx = indexes[i]
         print(labels[idx], res[idx])
+
+    # testing average testing cost & QPS
+    test_iter_num = 20
+
+    t2 = time.time()
+    for i in range(test_iter_num):
+        result = requests.post(endpoint, json=json_data)
+
+        if i % 10 == 0:
+            print('No.%d' % i)
+
+    all_time = time.time() - t2
+
+    ave_time = all_time / test_iter_num
+    qps = test_iter_num / all_time
+
+    print('Per image testing time: %.2f(s)' % ave_time)
+    print('QPS: %.2f' % qps)

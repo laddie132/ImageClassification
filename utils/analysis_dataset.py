@@ -17,7 +17,7 @@ root_path = '/home/lh/weed_photos/'
 
 
 def rename():
-    with open('../data/meta_data.json', 'r') as f:
+    with open('../data/weed_meta_data.json', 'r') as f:
         eng_zh = json.load(f)
 
     wheat_names = eng_zh['wheat']['classes']
@@ -41,7 +41,7 @@ def rename():
 
 
 def ana_amount():
-    with open('../data/meta_data.json', 'r') as f:
+    with open('../data/weed_meta_data.json', 'r') as f:
         amount_data = json.load(f)
 
     all_amount = []

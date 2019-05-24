@@ -32,7 +32,7 @@ def transform():
     for l in labels:
         out_json.append({'cname': eng_zh[l], 'description': ''})
 
-    with open('../data/weed_labels.json', 'w', encoding='utf-8') as wf:
+    with open('../data/weed_app_labels.json', 'w', encoding='utf-8') as wf:
         json.dump(out_json, wf, indent=2, ensure_ascii=False)
 
 

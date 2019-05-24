@@ -73,7 +73,7 @@ def load_labels(label_file):
 
 
 if __name__ == "__main__":
-    file_name = "/home/lh/resize_weed_photos/Alizarin-calamus/IMG_20180322_171043.jpg"
+    file_name = "/home/lh/weed_photos_resize/Alizarin-calamus/IMG_20180322_171043.jpg"
     model_file = "/home/lh/WeedClassification/outputs/weed-sample/frozen_graph.pb"
     label_file = "/home/lh/WeedClassification/outputs/weed-sample/output_labels.txt"
     input_height = 299
