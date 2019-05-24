@@ -95,8 +95,8 @@ def create_results_table(result_path, meta_data_path, output_path):
 
 if __name__ == '__main__':
     meta_data_path = '../data/weed_meta_data.json'
-    result_path = '../outputs/weed-sample/test_results.json'
-    output_path = '../outputs/weed-sample/results_table.xls'
+    result_path = '../outputs/weed-mix-sample/test_results.json'
+    output_path = '../outputs/weed-mix-sample/results_table.xls'
     # plot_acc_dataset(result_path)
     # plt.show()
 

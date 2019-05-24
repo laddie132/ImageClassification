@@ -20,6 +20,12 @@ python retrain.py --image_dir /home/lh/weed_photos_resize --image_lists_dir data
 python test_metrics.py
 ```
 
+## Rebuild Model
+```bash
+python rebuild_model.py --origin_model_dir=outputs/weed-mix-sample/saved_model \
+--model_dir=outputs/weed-mix-sample/saved_model_b64
+```
+
 ## Server
 ```bash
 simple_tensorflow_serving --model_config_file=model_config_file.json --enable_ssl True \

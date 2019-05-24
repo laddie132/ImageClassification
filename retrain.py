@@ -1206,7 +1206,7 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--print_misclassified_test_images',
-        default=True,
+        default=False,
         help="""\
       Whether to print out a list of all misclassified test images.\
       """,

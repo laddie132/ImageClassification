@@ -6,7 +6,7 @@ __email__ = "liuhan132@foxmail.com"
 
 import re
 import json
-from .dataset_fun import load_label_eng_zh
+from utils.dataset_fun import load_label_eng_zh
 
 
 def transform():
@@ -14,7 +14,7 @@ def transform():
     eng_zh = load_label_eng_zh(meta_data_path)
 
     labels = []
-    with open('../outputs/weed-sample/output_labels.txt', 'r') as f:
+    with open('../outputs/weed-mix-sample/output_labels.txt', 'r') as f:
         for line in f.readlines():
             labels.append(line.strip())
 
@@ -23,7 +23,7 @@ def transform():
     for l in labels:
         out_json.append({'cname': eng_zh[l], 'description': ''})
 
-    with open('../data/weed_app_labels.json', 'w', encoding='utf-8') as wf:
+    with open('../data/weed_mix_app_labels.json', 'w', encoding='utf-8') as wf:
         json.dump(out_json, wf, indent=2, ensure_ascii=False)
 
 

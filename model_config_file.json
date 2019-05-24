@@ -2,6 +2,11 @@
   "model_config_list": [
     {
       "name": "default",
+      "base_path": "outputs/weed-mix-sample/saved_model_b64",
+      "platform": "tensorflow"
+    },
+    {
+      "name": "raw",
       "base_path": "outputs/weed-sample/saved_model_b64",
       "platform": "tensorflow"
     }
