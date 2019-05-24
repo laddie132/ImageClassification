@@ -980,7 +980,11 @@ def main(_):
             class_count, FLAGS.final_tensor_name, bottleneck_tensor,
             wants_quantization, is_training=True)
 
-    with tf.Session(graph=graph) as sess:
+    # growth GPU config
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+
+    with tf.Session(config=config, graph=graph) as sess:
         # Initialize all weights: for the module to their pretrained values,
         # and for the newly added retraining layer to random initial values.
         init = tf.global_variables_initializer()
@@ -1125,12 +1129,6 @@ if __name__ == '__main__':
         default='',
         help='Path to folders of labeled images.'
     )
-    # parser.add_argument(
-    #     '--output_graph',
-    #     type=str,
-    #     default='/tmp/output_graph.pb',
-    #     help='Where to save the trained graph.'
-    # )
     parser.add_argument(
         '--intermediate_output_graphs_dir',
         type=str,
@@ -1158,18 +1156,6 @@ if __name__ == '__main__':
         default='data/weed_image_lists_oversample.json',
         help='Where to load image list.'
     )
-    # parser.add_argument(
-    #     '--output_labels',
-    #     type=str,
-    #     default='/tmp/output_labels.txt',
-    #     help='Where to save the trained graph\'s labels.'
-    # )
-    # parser.add_argument(
-    #     '--summaries_dir',
-    #     type=str,
-    #     default='/tmp/retrain_logs',
-    #     help='Where to save summary logs for TensorBoard.'
-    # )
     parser.add_argument(
         '--how_many_training_steps',
         type=int,
@@ -1226,12 +1212,6 @@ if __name__ == '__main__':
       """,
         action='store_true'
     )
-    # parser.add_argument(
-    #     '--bottleneck_dir',
-    #     type=str,
-    #     default='/tmp/bottleneck',
-    #     help='Path to cache bottleneck layer values as files.'
-    # )
     parser.add_argument(
         '--final_tensor_name',
         type=str,
@@ -1284,11 +1264,6 @@ if __name__ == '__main__':
       Which TensorFlow Hub module to use. For more options,
       search https://tfhub.dev for image feature vector modules.\
       """)
-    # parser.add_argument(
-    #     '--saved_model_dir',
-    #     type=str,
-    #     default='',
-    #     help='Where to save the exported graph.')
     parser.add_argument(
         '--logging_verbosity',
         type=str,
