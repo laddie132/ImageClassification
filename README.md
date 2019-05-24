@@ -1,5 +1,13 @@
 # WeedClassification
 
+## Preprocess
+```bash
+python split_dataset.py --image_dir /home/lh/weed_photos_website --oversampling_num=400 \
+--out_image_lists_dir=data/weed_image_lists_mix_oversample.json \
+--base_image_lists_dir=data/weed_image_lists.json \
+--min_num=100 --dropped_image_lists_dir=data/weed_image_lists_mix_dropped.json
+```
+
 ## Train
 
 ``` bash
