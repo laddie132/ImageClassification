@@ -9,13 +9,14 @@ import random
 import os
 import json
 import argparse
+import numpy as np
 import tensorflow as tf
 import collections
 
 MAX_NUM_IMAGES_PER_CLASS = 2 ** 27 - 1  # ~134M
 
 
-def create_image_lists(image_dir, testing_percentage, validation_percentage, oversampling_num=-1):
+def create_image_lists(image_dir, testing_percentage, validation_percentage):
     """Builds a list of training images from the file system.
 
     Analyzes the sub folders in the image directory, splits them into stable
@@ -33,7 +34,7 @@ def create_image_lists(image_dir, testing_percentage, validation_percentage, ove
       The order of items defines the class indices.
     """
     if not tf.gfile.Exists(image_dir):
-        tf.logging.error("Image directory '" + image_dir + "' not found.")
+        print("Image directory '" + image_dir + "' not found.")
         return None
     result = collections.OrderedDict()
     sub_dirs = sorted(x[0] for x in tf.gfile.Walk(image_dir))
@@ -53,50 +54,21 @@ def create_image_lists(image_dir, testing_percentage, validation_percentage, ove
 
         if dir_name == image_dir:
             continue
-        tf.logging.info("Looking for images in '" + dir_name + "'")
+        print("Looking for images in '" + dir_name + "'")
         for extension in extensions:
             file_glob = os.path.join(image_dir, dir_name, '[^.]*.' + extension)
             file_list.extend(tf.gfile.Glob(file_glob))
         if not file_list:
-            tf.logging.warning('No files found')
+            print('No files found')
             continue
         if len(file_list) < 20:
-            tf.logging.warning(
+            print(
                 'WARNING: Folder has less than 20 images, which may cause issues.')
         elif len(file_list) > MAX_NUM_IMAGES_PER_CLASS:
-            tf.logging.warning(
+            print(
                 'WARNING: Folder {} has more than {} images. Some images will '
                 'never be selected.'.format(dir_name, MAX_NUM_IMAGES_PER_CLASS))
         label_name = re.sub(r'[^a-z0-9]+', ' ', dir_name.lower())
-        # training_images = []
-        # testing_images = []
-        # validation_images = []
-        #
-        # for file_name in file_list:
-        #     base_name = os.path.basename(file_name)
-        #     # We want to ignore anything after '_nohash_' in the file name when
-        #     # deciding which set to put an image in, the data set creator has a way of
-        #     # grouping photos that are close variations of each other. For example
-        #     # this is used in the plant disease data set to group multiple pictures of
-        #     # the same leaf.
-        #     hash_name = re.sub(r'_nohash_.*$', '', file_name)
-        #     # This looks a bit magical, but we need to decide whether this file should
-        #     # go into the training, testing, or validation sets, and we want to keep
-        #     # existing files in the same set even if more files are subsequently
-        #     # added.
-        #     # To do that, we need a stable way of deciding based on just the file name
-        #     # itself, so we do a hash of that and then use that to generate a
-        #     # probability value that we use to assign it.
-        #     hash_name_hashed = hashlib.sha1(tf.compat.as_bytes(hash_name)).hexdigest()
-        #     percentage_hash = ((int(hash_name_hashed, 16) %
-        #                         (MAX_NUM_IMAGES_PER_CLASS + 1)) *
-        #                        (100.0 / MAX_NUM_IMAGES_PER_CLASS))
-        #     if percentage_hash < validation_percentage:
-        #         validation_images.append(base_name)
-        #     elif percentage_hash < (testing_percentage + validation_percentage):
-        #         testing_images.append(base_name)
-        #     else:
-        #         training_images.append(base_name)
 
         # random split dataset
         base_name_list = list(map(lambda x: os.path.basename(x),
@@ -109,19 +81,6 @@ def create_image_lists(image_dir, testing_percentage, validation_percentage, ove
         validation_images = base_name_list[test_end:valid_end]
         training_images = base_name_list[valid_end:]
 
-        # oversampling
-        if oversampling_num > 0:
-            mulitple = oversampling_num // len(training_images)
-            if mulitple == 0:
-                random.shuffle(training_images)
-                training_images = training_images[:oversampling_num]
-            else:
-                oversampling_images = []
-                for _ in range(mulitple):
-                    oversampling_images += training_images
-                sample_images = random.sample(training_images, oversampling_num - len(oversampling_images))
-                training_images = oversampling_images + sample_images
-
         result[label_name] = {
             'dir': dir_name,
             'training': training_images,
@@ -131,12 +90,77 @@ def create_image_lists(image_dir, testing_percentage, validation_percentage, ove
     return result
 
 
+def oversample(image_lists, oversampling_num):
+    if oversampling_num < 0:
+        return image_lists
+
+    oversample_image_lists = collections.OrderedDict()
+    for name, value in image_lists.items():
+        training_images = value['training']
+
+        mulitple = oversampling_num // len(training_images)
+        if mulitple == 0:
+            random.shuffle(training_images)
+            training_images = training_images[:oversampling_num]
+        else:
+            oversampling_images = []
+            for _ in range(mulitple):
+                oversampling_images += training_images
+            sample_images = random.sample(training_images, oversampling_num - len(oversampling_images))
+            training_images = oversampling_images + sample_images
+
+        value['training'] = training_images
+        oversample_image_lists[name] = value
+    return oversample_image_lists
+
+
+def concat_image_lists(base_image_lists, append_image_lists):
+    new_image_lists = collections.OrderedDict()
+    for name, value in base_image_lists.items():
+        print('Concating label: ' + name)
+        if name in append_image_lists:
+            assert append_image_lists[name]['dir'] == value['dir']
+
+            value['training'].extend(append_image_lists[name]['training'])
+            random.shuffle(value['training'])
+
+            value['testing'].extend(append_image_lists[name]['testing'])
+            random.shuffle(value['testing'])
+
+            value['validation'].extend(append_image_lists[name]['validation'])
+            random.shuffle(value['validation'])
+
+        new_image_lists[name] = value
+
+    return new_image_lists
+
+
+def filter_image_lists(image_lists, min_num):
+    filtered_image_lists = collections.OrderedDict()
+    dropped_image_lists = collections.OrderedDict()
+    for name, value in image_lists.items():
+        print('Filtering label: ' + name)
+
+        num_images = len(value['training']) + len(value['testing']) + len(value['validation'])
+        if num_images < min_num:
+            dropped_image_lists[name] = value
+        else:
+            filtered_image_lists[name] = value
+
+    return filtered_image_lists, dropped_image_lists
+
+
+def set_random_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.set_random_seed(seed)
+
+
 def save_image_lists(image_lists, out_file):
     with open(out_file, 'w') as wf:
         json.dump(image_lists, wf, indent=2)
 
 
-# todo: load from base_image_list
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -146,9 +170,16 @@ if __name__ == '__main__':
         help='Set random seed.'
     )
     parser.add_argument(
-        '--base_image_list',
+        '--base_image_lists_dir',
         type=str,
-        help='Set the base image list'
+        default='',
+        help='Set the base image lists dir'
+    )
+    parser.add_argument(
+        '--out_image_lists_dir',
+        type=str,
+        default='',
+        help='Set the output image lists dir'
     )
     parser.add_argument(
         '--image_dir',
@@ -174,10 +205,38 @@ if __name__ == '__main__':
         default=-1,
         help='Oversamping number'
     )
+    parser.add_argument(
+        '--min_num',
+        type=int,
+        default=-1,
+        help='Minimal number of label images.'
+    )
+    parser.add_argument(
+        '--dropped_image_lists_dir',
+        type=str,
+        default='',
+        help='Where dropped image lists saved.'
+    )
     FLAGS, unparsed = parser.parse_known_args()
-    setattr(FLAGS, 'image_lists_dir', FLAGS.output_path + '/image_lists.json')
+    set_random_seed(FLAGS.seed)
 
     # Look at the folder structure, and create lists of all the images.
     image_lists = create_image_lists(FLAGS.image_dir, FLAGS.testing_percentage,
-                                     FLAGS.validation_percentage, FLAGS.oversampling_num)
-    save_image_lists(image_lists, FLAGS.image_lists_dir)
+                                     FLAGS.validation_percentage)
+
+    # concat other image lists
+    if FLAGS.base_image_lists_dir != '':
+        with open(FLAGS.base_image_lists_dir, 'r') as f:
+            base_image_lists = json.load(f)
+        image_lists = concat_image_lists(base_image_lists, image_lists)
+
+    # filter with number of images
+    if FLAGS.min_num > 0:
+        image_lists, dropped_image_lists = filter_image_lists(image_lists, FLAGS.min_num)
+        save_image_lists(dropped_image_lists, FLAGS.dropped_image_lists_dir)
+
+    # oversample
+    if FLAGS.oversampling_num > 0:
+        image_lists = oversample(image_lists, FLAGS.oversampling_num)
+
+    save_image_lists(image_lists, FLAGS.out_image_lists_dir)

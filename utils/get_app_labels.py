@@ -4,23 +4,14 @@
 __author__ = "Han"
 __email__ = "liuhan132@foxmail.com"
 
-
+import re
 import json
+from .dataset_fun import load_label_eng_zh
 
 
 def transform():
-    with open('../data/weed_meta_data.json', 'r', encoding='utf-8') as f:
-        meta_data = json.load(f)
-
-    eng_zh = {}
-    for _, ele in meta_data.items():
-        for big_en, des in ele['classes'].items():
-            zh = des['name']
-            en = big_en.lower().replace('-', ' ').replace('_', ' ')
-
-            print(en, zh)
-
-            eng_zh[en] = ele['name'] + '-' + zh
+    meta_data_path = '../data/weed_meta_data.json'
+    eng_zh = load_label_eng_zh(meta_data_path)
 
     labels = []
     with open('../outputs/weed-sample/output_labels.txt', 'r') as f:
