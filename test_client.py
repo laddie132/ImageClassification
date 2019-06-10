@@ -23,7 +23,7 @@ def load_labels(label_file):
 
 if __name__ == "__main__":
     file_name = "data/test_weed.jpg"
-    label_file = "outputs/weed-sample/output_labels.txt"
+    label_file = "outputs/weed-mix-sample/output_labels.txt"
     model_name = "default"
     model_version = 2
     enable_ssl = True
