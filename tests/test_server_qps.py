@@ -9,6 +9,9 @@ import time
 import tensorflow as tf
 
 
+"""Test the QPS on server"""
+
+
 def load_graph(model_file):
     graph = tf.Graph()
     graph_def = tf.GraphDef()
