@@ -390,7 +390,7 @@ def cache_bottlenecks(sess, image_lists, image_dir, bottleneck_dir,
                         str(how_many_bottlenecks) + ' bottleneck files created.')
 
 
-def get_random_cached_bottlenecks(sess, image_lists, how_many, category,
+def get_random_cached_bottlenecks(sess, image_lists, top_image_labels, how_many, category,
                                   bottleneck_dir, image_dir, jpeg_data_tensor,
                                   decoded_image_tensor, resized_input_tensor,
                                   bottleneck_tensor, module_name):
@@ -423,12 +423,15 @@ def get_random_cached_bottlenecks(sess, image_lists, how_many, category,
     class_count = len(image_lists.keys())
     bottlenecks = []
     ground_truths = []
+    ground_truths_top_label = []
     filenames = []
     if how_many >= 0:
         # Retrieve a random sample of bottlenecks.
         for unused_i in range(how_many):
             label_index = random.randrange(class_count)
             label_name = list(image_lists.keys())[label_index]
+            top_label_name = extract_top_label(label_name)
+            top_label_index = top_image_labels.index(top_label_name)
             image_index = random.randrange(MAX_NUM_IMAGES_PER_CLASS + 1)
             image_name = get_image_path(image_lists, label_name, image_index,
                                         image_dir, category)
@@ -438,10 +441,14 @@ def get_random_cached_bottlenecks(sess, image_lists, how_many, category,
                 resized_input_tensor, bottleneck_tensor, module_name)
             bottlenecks.append(bottleneck)
             ground_truths.append(label_index)
+            ground_truths_top_label.append(top_label_index)
             filenames.append(image_name)
     else:
         # Retrieve all bottlenecks.
         for label_index, label_name in enumerate(image_lists.keys()):
+            top_label_name = extract_top_label(label_name)
+            top_label_index = top_image_labels.index(top_label_name)
+
             for image_index, image_name in enumerate(
                     image_lists[label_name][category]):
                 image_name = get_image_path(image_lists, label_name, image_index,
@@ -452,8 +459,10 @@ def get_random_cached_bottlenecks(sess, image_lists, how_many, category,
                     resized_input_tensor, bottleneck_tensor, module_name)
                 bottlenecks.append(bottleneck)
                 ground_truths.append(label_index)
+                ground_truths_top_label.append(top_label_index)
                 filenames.append(image_name)
-    return bottlenecks, ground_truths, filenames
+
+    return bottlenecks, ground_truths, ground_truths_top_label, filenames
 
 
 def get_random_distorted_bottlenecks(
@@ -631,13 +640,8 @@ def variable_summaries(var):
         tf.summary.histogram('histogram', var)
 
 
-def add_final_hierarchial_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
-                          quantize_layer, is_training):
-    pass
-
-
-def add_final_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
-                          quantize_layer, is_training):
+def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final_top_tensor_name,
+                          bottleneck_tensor, quantize_layer, is_training):
     """Adds a new softmax and fully-connected layer for training and eval.
 
     We need to retrain the top layer to identify our new classes, so this function
@@ -672,6 +676,9 @@ def add_final_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
         ground_truth_input = tf.placeholder(
             tf.int64, [batch_size], name='GroundTruthInput')
 
+        ground_truth_input_top = tf.placeholder(
+            tf.int64, [batch_size], name='GroundTruthInputTop')
+
     # Organizing the following ops so they are easier to see in TensorBoard.
     layer_name = 'final_retrain_ops'
     with tf.name_scope(layer_name):
@@ -689,7 +696,26 @@ def add_final_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
             logits = tf.matmul(bottleneck_input, layer_weights) + layer_biases
             tf.summary.histogram('pre_activations', logits)
 
-    final_tensor = tf.nn.softmax(logits, name=final_tensor_name)
+        final_tensor = tf.nn.softmax(logits, name=final_tensor_name)
+
+    # top label
+    layer_name = 'final_retrain_ops_top'
+    with tf.name_scope(layer_name):
+        with tf.name_scope('weights'):
+            top_initial_value = tf.truncated_normal(
+                [bottleneck_tensor_size, top_class_count], stddev=0.001)
+            top_layer_weights = tf.Variable(top_initial_value, name='final_weights')
+            variable_summaries(top_layer_weights)
+
+        with tf.name_scope('biases'):
+            top_layer_biases = tf.Variable(tf.zeros([top_class_count]), name='final_biases')
+            variable_summaries(top_layer_biases)
+
+        with tf.name_scope('Wx_plus_b'):
+            top_logits = tf.matmul(bottleneck_input, top_layer_weights) + top_layer_biases
+            tf.summary.histogram('pre_activations', top_logits)
+
+        final_top_tensor = tf.nn.softmax(top_logits, name=final_top_tensor_name)
 
     # The tf.contrib.quantize functions rewrite the graph in place for
     # quantization. The imported model graph has already been rewritten, so upon
@@ -705,11 +731,15 @@ def add_final_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
 
     # If this is an eval graph, we don't need to add loss ops or an optimizer.
     if not is_training:
-        return None, None, bottleneck_input, ground_truth_input, final_tensor
+        return None, None, bottleneck_input, ground_truth_input, final_tensor, final_top_tensor
 
     with tf.name_scope('cross_entropy'):
         cross_entropy_mean = tf.losses.sparse_softmax_cross_entropy(
             labels=ground_truth_input, logits=logits)
+
+    with tf.name_scope('cross_entropy_top'):
+        cross_entropy_mean_top = tf.losses.sparse_softmax_cross_entropy(
+            labels=ground_truth_input_top, logits=top_logits)
 
     tf.summary.scalar('cross_entropy', cross_entropy_mean)
 
@@ -717,13 +747,16 @@ def add_final_retrain_ops(class_count, final_tensor_name, bottleneck_tensor,
     with tf.name_scope('train'):
         # optimizer = tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
         optimizer = tf.train.AdamOptimizer(FLAGS.learning_rate)
-        train_step = optimizer.minimize(cross_entropy_mean)
+        train_step_sub = optimizer.minimize(cross_entropy_mean)
+        train_step_top = optimizer.minimize(cross_entropy_mean_top)
 
-    return (train_step, cross_entropy_mean, bottleneck_input, ground_truth_input,
-            final_tensor)
+        train_step = tf.group(train_step_sub, train_step_top)
+
+    return (train_step, cross_entropy_mean, cross_entropy_mean_top, bottleneck_input, ground_truth_input,
+            ground_truth_input_top, final_tensor, final_top_tensor)
 
 
-def add_evaluation_step(result_tensor, ground_truth_tensor):
+def add_evaluation_step(result_tensor, ground_truth_tensor, layer_name):
     """Inserts the operations we need to evaluate the accuracy of our results.
 
     Args:
@@ -734,17 +767,17 @@ def add_evaluation_step(result_tensor, ground_truth_tensor):
     Returns:
       Tuple of (evaluation step, prediction).
     """
-    with tf.name_scope('accuracy'):
+    with tf.name_scope(layer_name):
         with tf.name_scope('correct_prediction'):
             prediction = tf.argmax(result_tensor, 1)
             correct_prediction = tf.equal(prediction, ground_truth_tensor)
         with tf.name_scope('accuracy'):
             evaluation_step = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-    tf.summary.scalar('accuracy', evaluation_step)
+    tf.summary.scalar(layer_name, evaluation_step)
     return evaluation_step, prediction
 
 
-def run_final_eval(train_session, module_spec, class_count, image_lists,
+def run_final_eval(train_session, module_spec, class_count, top_class_count, image_lists, top_image_labels,
                    jpeg_data_tensor, decoded_image_tensor,
                    resized_image_tensor, bottleneck_tensor):
     """Runs a final evaluation on an eval graph using the test data set.
@@ -759,24 +792,29 @@ def run_final_eval(train_session, module_spec, class_count, image_lists,
       resized_image_tensor: The input node of the recognition graph.
       bottleneck_tensor: The bottleneck output layer of the CNN graph.
     """
-    test_bottlenecks, test_ground_truth, test_filenames = (
-        get_random_cached_bottlenecks(train_session, image_lists,
+    test_bottlenecks, \
+    test_ground_truth, test_ground_truth_top_label, \
+    test_filenames = (
+        get_random_cached_bottlenecks(train_session, image_lists, top_image_labels,
                                       FLAGS.test_batch_size,
                                       'testing', FLAGS.bottleneck_dir,
                                       FLAGS.image_dir, jpeg_data_tensor,
                                       decoded_image_tensor, resized_image_tensor,
                                       bottleneck_tensor, FLAGS.tfhub_module))
 
-    (eval_session, _, bottleneck_input, ground_truth_input, evaluation_step,
-     prediction) = build_eval_session(module_spec, class_count)
-    test_accuracy, predictions = eval_session.run(
-        [evaluation_step, prediction],
+    (eval_session, _, bottleneck_input, ground_truth_input, ground_truth_input_top, evaluation_step,
+     evaluation_top_step, prediction, prediction_top) = build_eval_session(module_spec, class_count, top_class_count)
+    test_accuracy, test_accuracy_top, predictions = eval_session.run(
+        [evaluation_step, evaluation_top_step, prediction],
         feed_dict={
             bottleneck_input: test_bottlenecks,
-            ground_truth_input: test_ground_truth
+            ground_truth_input: test_ground_truth,
+            ground_truth_input_top: test_ground_truth_top_label
         })
     tf.logging.info('Final test accuracy = %.1f%% (N=%d)' %
                     (test_accuracy * 100, len(test_bottlenecks)))
+    tf.logging.info('Final test top-accuracy = %.1f%% (N=%d)' %
+                    (test_accuracy_top * 100, len(test_bottlenecks)))
 
     if FLAGS.print_misclassified_test_images:
         tf.logging.info('=== MISCLASSIFIED TEST IMAGES ===')
@@ -786,7 +824,7 @@ def run_final_eval(train_session, module_spec, class_count, image_lists,
                                               list(image_lists.keys())[predictions[i]]))
 
 
-def build_eval_session(module_spec, class_count):
+def build_eval_session(module_spec, class_count, top_class_count):
     """Builds an restored eval session without train operations for exporting.
 
     Args:
@@ -804,9 +842,10 @@ def build_eval_session(module_spec, class_count):
     eval_sess = tf.Session(graph=eval_graph)
     with eval_graph.as_default():
         # Add the new layer for exporting.
-        (_, _, bottleneck_input,
-         ground_truth_input, final_tensor) = add_final_retrain_ops(
-            class_count, FLAGS.final_tensor_name, bottleneck_tensor,
+        (_, _, _, bottleneck_input,
+         ground_truth_input, ground_truth_input_top, final_tensor, final_top_tensor) = add_final_retrain_ops(
+            class_count, top_class_count, FLAGS.final_tensor_name,
+            FLAGS.final_top_tensor_name, bottleneck_tensor,
             wants_quantization, is_training=False)
 
         # Now we need to restore the values from the training graph to the eval
@@ -814,15 +853,19 @@ def build_eval_session(module_spec, class_count):
         tf.train.Saver().restore(eval_sess, CHECKPOINT_NAME)
 
         evaluation_step, prediction = add_evaluation_step(final_tensor,
-                                                          ground_truth_input)
+                                                          ground_truth_input,
+                                                          'accuracy')
+        evaluation_top_step, prediction_top = add_evaluation_step(final_top_tensor,
+                                                                  ground_truth_input_top,
+                                                                  'accuracy_top')
 
-    return (eval_sess, resized_input_tensor, bottleneck_input, ground_truth_input,
-            evaluation_step, prediction)
+    return (eval_sess, resized_input_tensor, bottleneck_input, ground_truth_input, ground_truth_input_top,
+            evaluation_step, evaluation_top_step, prediction, prediction_top)
 
 
-def save_graph_to_file(graph_file_name, module_spec, class_count):
+def save_graph_to_file(graph_file_name, module_spec, class_count, top_class_count):
     """Saves an graph to file, creating a valid quantized one if necessary."""
-    sess, _, _, _, _, _ = build_eval_session(module_spec, class_count)
+    sess, _, _, _, _, _, _, _, _ = build_eval_session(module_spec, class_count, top_class_count)
     graph = sess.graph
 
     output_graph_def = tf.graph_util.convert_variables_to_constants(
@@ -869,7 +912,7 @@ def add_jpeg_decoding(module_spec):
     return jpeg_data, resized_image
 
 
-def export_model(module_spec, class_count, saved_model_dir):
+def export_model(module_spec, class_count, top_class_count, saved_model_dir):
     """Exports model for serving.
 
     Args:
@@ -878,7 +921,7 @@ def export_model(module_spec, class_count, saved_model_dir):
       saved_model_dir: Directory in which to save exported model and variables.
     """
     # The SavedModel should hold the eval graph.
-    sess, in_image, _, _, _, _ = build_eval_session(module_spec, class_count)
+    sess, in_image, _, _, _, _, _, _, _ = build_eval_session(module_spec, class_count, top_class_count)
     with sess.graph.as_default() as graph:
         tf.saved_model.simple_save(
             sess,
@@ -937,6 +980,19 @@ def set_random_seed():
     tf.set_random_seed(FLAGS.seed)
 
 
+def extract_top_label(image_label):
+    return image_label.split(' ')[0]
+
+
+def read_top_labels(image_lists):
+    label_names = image_lists.keys()
+    top_label_names = list(map(
+        lambda x: extract_top_label(x),
+        label_names
+    ))
+    return top_label_names
+
+
 def main(_):
     # Prepare necessary directories that can be used during training
     prepare_file_system()
@@ -953,6 +1009,8 @@ def main(_):
         return -1
 
     image_lists = load_image_lists()
+    top_image_labels = read_top_labels(image_lists)
+    top_class_count = len(top_image_labels)
     class_count = len(image_lists.keys())
     if class_count == 0:
         tf.logging.error('No valid folders of images found at ' + FLAGS.image_dir)
@@ -975,9 +1033,9 @@ def main(_):
 
     # Add the new layer that we'll be training.
     with graph.as_default():
-        (train_step, cross_entropy, bottleneck_input,
-         ground_truth_input, final_tensor) = add_final_retrain_ops(
-            class_count, FLAGS.final_tensor_name, bottleneck_tensor,
+        (train_step, cross_entropy, cross_entropy_top, bottleneck_input,
+         ground_truth_input, ground_truth_input_top, final_tensor, final_top_tensor) = add_final_retrain_ops(
+            class_count, top_class_count, FLAGS.final_tensor_name, FLAGS.final_top_tensor_name, bottleneck_tensor,
             wants_quantization, is_training=True)
 
     # growth GPU config
@@ -1008,7 +1066,8 @@ def main(_):
                               bottleneck_tensor, FLAGS.tfhub_module)
 
         # Create the operations we need to evaluate the accuracy of our new layer.
-        evaluation_step, _ = add_evaluation_step(final_tensor, ground_truth_input)
+        evaluation_step, _ = add_evaluation_step(final_tensor, ground_truth_input, 'accuracy')
+        evaluation_top_step, _ = add_evaluation_step(final_top_tensor, ground_truth_input_top, 'accuracy_top')
 
         # Merge all the summaries and write them out to the summaries_dir
         merged = tf.summary.merge_all()
@@ -1034,8 +1093,9 @@ def main(_):
                     distorted_image_tensor, resized_image_tensor, bottleneck_tensor)
             else:
                 (train_bottlenecks,
-                 train_ground_truth, _) = get_random_cached_bottlenecks(
-                    sess, image_lists, FLAGS.train_batch_size, 'training',
+                 train_ground_truth,
+                 train_ground_truth_top_label, _) = get_random_cached_bottlenecks(
+                    sess, image_lists, top_image_labels, FLAGS.train_batch_size, 'training',
                     FLAGS.bottleneck_dir, FLAGS.image_dir, jpeg_data_tensor,
                     decoded_image_tensor, resized_image_tensor, bottleneck_tensor,
                     FLAGS.tfhub_module)
@@ -1044,38 +1104,43 @@ def main(_):
             train_summary, _ = sess.run(
                 [merged, train_step],
                 feed_dict={bottleneck_input: train_bottlenecks,
-                           ground_truth_input: train_ground_truth})
+                           ground_truth_input: train_ground_truth,
+                           ground_truth_input_top: train_ground_truth_top_label})
             train_writer.add_summary(train_summary, i)
 
             # Every so often, print out how well the graph is training.
             is_last_step = (i + 1 == FLAGS.how_many_training_steps)
             if (i % FLAGS.eval_step_interval) == 0 or is_last_step:
-                train_accuracy, cross_entropy_value = sess.run(
-                    [evaluation_step, cross_entropy],
+                train_accuracy, train_top_accuracy, cross_entropy_value, cross_entropy_value_top = sess.run(
+                    [evaluation_step, evaluation_top_step, cross_entropy, cross_entropy_top],
                     feed_dict={bottleneck_input: train_bottlenecks,
-                               ground_truth_input: train_ground_truth})
-                tf.logging.info('%s: Step %d: Train accuracy = %.1f%%' %
-                                (datetime.now(), i, train_accuracy * 100))
-                tf.logging.info('%s: Step %d: Cross entropy = %f' %
-                                (datetime.now(), i, cross_entropy_value))
+                               ground_truth_input: train_ground_truth,
+                               ground_truth_input_top: train_ground_truth_top_label})
+                tf.logging.info('%s: Step %d: Train accuracy = %.1f%%, Train-Top accuracy = %.1f%%' %
+                                (datetime.now(), i, train_accuracy * 100, train_top_accuracy * 100))
+                tf.logging.info('%s: Step %d: Cross entropy = %f, Cross-Top entropy = %f' %
+                                (datetime.now(), i, cross_entropy_value, cross_entropy_value_top))
                 # TODO: Make this use an eval graph, to avoid quantization
                 # moving averages being updated by the validation set, though in
                 # practice this makes a negligable difference.
-                validation_bottlenecks, validation_ground_truth, _ = (
+                validation_bottlenecks, \
+                validation_ground_truth, \
+                validation_ground_truth_top_label, _ = (
                     get_random_cached_bottlenecks(
-                        sess, image_lists, FLAGS.validation_batch_size, 'validation',
+                        sess, image_lists, top_image_labels, FLAGS.validation_batch_size, 'validation',
                         FLAGS.bottleneck_dir, FLAGS.image_dir, jpeg_data_tensor,
                         decoded_image_tensor, resized_image_tensor, bottleneck_tensor,
                         FLAGS.tfhub_module))
                 # Run a validation step and capture training summaries for TensorBoard
                 # with the `merged` op.
-                validation_summary, validation_accuracy = sess.run(
-                    [merged, evaluation_step],
+                validation_summary, validation_accuracy, validation_accuracy_top = sess.run(
+                    [merged, evaluation_step, evaluation_top_step],
                     feed_dict={bottleneck_input: validation_bottlenecks,
-                               ground_truth_input: validation_ground_truth})
+                               ground_truth_input: validation_ground_truth,
+                               ground_truth_input_top: validation_ground_truth_top_label})
                 validation_writer.add_summary(validation_summary, i)
-                tf.logging.info('%s: Step %d: Validation accuracy = %.1f%% (N=%d)' %
-                                (datetime.now(), i, validation_accuracy * 100,
+                tf.logging.info('%s: Step %d: Validation accuracy = %.1f%%, Validation-Top accuracy = %.1f%%, (N=%d)' %
+                                (datetime.now(), i, validation_accuracy * 100, validation_accuracy_top * 100,
                                  len(validation_bottlenecks)))
 
             # Store intermediate results
@@ -1091,14 +1156,14 @@ def main(_):
                 tf.logging.info('Save intermediate result to : ' +
                                 intermediate_file_name)
                 save_graph_to_file(intermediate_file_name, module_spec,
-                                   class_count)
+                                   class_count, top_class_count)
 
         # After training is complete, force one last save of the train checkpoint.
         train_saver.save(sess, CHECKPOINT_NAME)
 
         # We've completed all our training, so run a final test evaluation on
         # some new images we haven't used before.
-        run_final_eval(sess, module_spec, class_count, image_lists,
+        run_final_eval(sess, module_spec, class_count, top_class_count, image_lists, top_image_labels,
                        jpeg_data_tensor, decoded_image_tensor, resized_image_tensor,
                        bottleneck_tensor)
 
@@ -1107,12 +1172,14 @@ def main(_):
         tf.logging.info('Save final result to : ' + FLAGS.output_graph)
         if wants_quantization:
             tf.logging.info('The model is instrumented for quantization with TF-Lite')
-        save_graph_to_file(FLAGS.output_graph, module_spec, class_count)
+        save_graph_to_file(FLAGS.output_graph, module_spec, class_count, top_class_count)
         with tf.gfile.GFile(FLAGS.output_labels, 'w') as f:
             f.write('\n'.join(image_lists.keys()) + '\n')
+        with tf.gfile.GFile(FLAGS.output_top_labels, 'w') as f:
+            f.write('\n'.join(top_image_labels) + '\n')
 
         if FLAGS.saved_model_dir:
-            export_model(module_spec, class_count, FLAGS.saved_model_dir)
+            export_model(module_spec, class_count, top_class_count, FLAGS.saved_model_dir)
 
 
 if __name__ == '__main__':
@@ -1221,6 +1288,14 @@ if __name__ == '__main__':
       """
     )
     parser.add_argument(
+        '--final_top_tensor_name',
+        type=str,
+        default='final_result_top',
+        help="""\
+          The name of the output classification layer in the retrained graph.\
+          """
+    )
+    parser.add_argument(
         '--flip_left_right',
         default=False,
         help="""\
@@ -1273,6 +1348,7 @@ if __name__ == '__main__':
     FLAGS, unparsed = parser.parse_known_args()
 
     setattr(FLAGS, 'output_labels', FLAGS.output_path + '/output_labels.txt')
+    setattr(FLAGS, 'output_top_labels', FLAGS.output_path + '/output_top_labels.txt')
     setattr(FLAGS, 'output_graph', FLAGS.output_path + '/frozen_graph.pb')
     setattr(FLAGS, 'summaries_dir', FLAGS.output_path + '/retrain_logs/')
     setattr(FLAGS, 'bottleneck_dir', FLAGS.output_path + '/bottleneck/')
