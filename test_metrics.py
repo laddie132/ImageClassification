@@ -9,7 +9,7 @@ import os
 import json
 import numpy as np
 import tensorflow as tf
-
+from utils.analysis_results import create_results_table
 
 def load_graph(model_file):
     graph = tf.Graph()
@@ -68,11 +68,13 @@ def load_labels(label_file):
 
 if __name__ == '__main__':
     image_root_path = '/home/lh/weed_photos_resize_mix/'
-    output_path = '/home/lh/WeedClassification/outputs/weed-mix-sample/'
-    image_list_file = "data/weed_image_lists_mix_oversample.json"
+    output_path = '/home/lh/WeedClassification/outputs/weed-mix-sample-genus/'
+    image_list_file = "../data/weed_image_lists_mix_oversample.json"
+    meta_data_path = '../data/weed_meta_data.json'
     results_file = output_path + 'test_results.json'
     model_file = output_path + "frozen_graph.pb"
     label_file = output_path + "output_labels.txt"
+    results_table_file = output_path + 'results_table.xls'
     input_height = 299
     input_width = 299
     input_mean = 0
@@ -173,3 +175,5 @@ if __name__ == '__main__':
 
     with open(results_file, 'w') as wf:
         json.dump(output_results, wf, indent=2)
+
+    create_results_table(results_file, meta_data_path, results_table_file)
