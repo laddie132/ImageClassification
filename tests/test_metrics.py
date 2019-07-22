@@ -11,6 +11,9 @@ import numpy as np
 import tensorflow as tf
 
 
+"""Evaluate the model on server"""
+
+
 def load_graph(model_file):
     graph = tf.Graph()
     graph_def = tf.GraphDef()

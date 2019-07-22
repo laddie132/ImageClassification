@@ -13,6 +13,9 @@ import base64
 import time
 
 
+"""Test the QPS on client: simulate a client to interact with server"""
+
+
 def load_labels(label_file):
     label = []
     proto_as_ascii_lines = tf.gfile.GFile(label_file).readlines()
