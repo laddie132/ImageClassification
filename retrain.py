@@ -696,7 +696,7 @@ def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final
             logits = tf.matmul(bottleneck_input, layer_weights) + layer_biases
             tf.summary.histogram('pre_activations', logits)
 
-        final_tensor = tf.nn.softmax(logits, name=final_tensor_name)
+    final_tensor = tf.nn.softmax(logits, name=final_tensor_name)
 
     # top label
     layer_name = 'final_retrain_ops_top'
@@ -715,7 +715,7 @@ def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final
             top_logits = tf.matmul(bottleneck_input, top_layer_weights) + top_layer_biases
             tf.summary.histogram('pre_activations', top_logits)
 
-        final_top_tensor = tf.nn.softmax(top_logits, name=final_top_tensor_name)
+    final_top_tensor = tf.nn.softmax(top_logits, name=final_top_tensor_name)
 
     # The tf.contrib.quantize functions rewrite the graph in place for
     # quantization. The imported model graph has already been rewritten, so upon
@@ -731,7 +731,8 @@ def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final
 
     # If this is an eval graph, we don't need to add loss ops or an optimizer.
     if not is_training:
-        return None, None, bottleneck_input, ground_truth_input, final_tensor, final_top_tensor
+        return None, None, None, bottleneck_input, ground_truth_input, ground_truth_input_top, \
+               final_tensor, final_top_tensor
 
     with tf.name_scope('cross_entropy'):
         cross_entropy_mean = tf.losses.sparse_softmax_cross_entropy(
@@ -986,11 +987,11 @@ def extract_top_label(image_label):
 
 def read_top_labels(image_lists):
     label_names = image_lists.keys()
-    top_label_names = list(map(
+    top_label_names = set(map(
         lambda x: extract_top_label(x),
         label_names
     ))
-    return top_label_names
+    return list(top_label_names)
 
 
 def main(_):
