@@ -219,7 +219,7 @@ def create_module_graph(module_spec):
     height, width = hub.get_expected_image_size(module_spec)
     with tf.Graph().as_default() as graph:
         resized_input_tensor = tf.placeholder(tf.float32, [None, height, width, 3])
-        m = hub.Module(module_spec)
+        m = hub.Module(module_spec, trainable=FLAGS.module_trainable)
         bottleneck_tensor = m(resized_input_tensor)
         wants_quantization = any(node.op in FAKE_QUANT_OPS
                                  for node in graph.as_graph_def().node)
@@ -390,10 +390,28 @@ def cache_bottlenecks(sess, image_lists, image_dir, bottleneck_dir,
                         str(how_many_bottlenecks) + ' bottleneck files created.')
 
 
+def get_image_data_tensor(sess, decoded_image_tensor, image_data_tensor,
+                          image_lists, label_name, index, image_dir, category):
+    image_path = get_image_path(image_lists, label_name, index,
+                                image_dir, category)
+    if not tf.gfile.Exists(image_path):
+        tf.logging.fatal('File does not exist %s', image_path)
+    image_data = tf.gfile.GFile(image_path, 'rb').read()
+    try:
+        resized_input_values = sess.run(decoded_image_tensor,
+                                        {image_data_tensor: image_data})
+        resized_input_values = np.squeeze(resized_input_values)
+    except Exception as e:
+        raise RuntimeError('Error during processing file %s (%s)' % (image_path,
+                                                                     str(e)))
+
+    return resized_input_values
+
+
 def get_random_cached_bottlenecks(sess, image_lists, top_image_labels, how_many, category,
                                   bottleneck_dir, image_dir, jpeg_data_tensor,
                                   decoded_image_tensor, resized_input_tensor,
-                                  bottleneck_tensor, module_name):
+                                  bottleneck_tensor, module_name, module_trainable):
     """Retrieves bottleneck values for cached images.
 
     If no distortions are being applied, this function can retrieve the cached
@@ -435,10 +453,15 @@ def get_random_cached_bottlenecks(sess, image_lists, top_image_labels, how_many,
             image_index = random.randrange(MAX_NUM_IMAGES_PER_CLASS + 1)
             image_name = get_image_path(image_lists, label_name, image_index,
                                         image_dir, category)
-            bottleneck = get_or_create_bottleneck(
-                sess, image_lists, label_name, image_index, image_dir, category,
-                bottleneck_dir, jpeg_data_tensor, decoded_image_tensor,
-                resized_input_tensor, bottleneck_tensor, module_name)
+
+            if module_trainable:
+                bottleneck = get_image_data_tensor(sess, decoded_image_tensor, jpeg_data_tensor,
+                                                   image_lists, label_name, image_index, image_dir, category)
+            else:
+                bottleneck = get_or_create_bottleneck(
+                    sess, image_lists, label_name, image_index, image_dir, category,
+                    bottleneck_dir, jpeg_data_tensor, decoded_image_tensor,
+                    resized_input_tensor, bottleneck_tensor, module_name)
             bottlenecks.append(bottleneck)
             ground_truths.append(label_index)
             ground_truths_top_label.append(top_label_index)
@@ -453,10 +476,14 @@ def get_random_cached_bottlenecks(sess, image_lists, top_image_labels, how_many,
                     image_lists[label_name][category]):
                 image_name = get_image_path(image_lists, label_name, image_index,
                                             image_dir, category)
-                bottleneck = get_or_create_bottleneck(
-                    sess, image_lists, label_name, image_index, image_dir, category,
-                    bottleneck_dir, jpeg_data_tensor, decoded_image_tensor,
-                    resized_input_tensor, bottleneck_tensor, module_name)
+                if module_trainable:
+                    bottleneck = get_image_data_tensor(sess, decoded_image_tensor, jpeg_data_tensor,
+                                                       image_lists, label_name, image_index, image_dir, category)
+                else:
+                    bottleneck = get_or_create_bottleneck(
+                        sess, image_lists, label_name, image_index, image_dir, category,
+                        bottleneck_dir, jpeg_data_tensor, decoded_image_tensor,
+                        resized_input_tensor, bottleneck_tensor, module_name)
                 bottlenecks.append(bottleneck)
                 ground_truths.append(label_index)
                 ground_truths_top_label.append(top_label_index)
@@ -668,16 +695,34 @@ def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final
     batch_size, bottleneck_tensor_size = bottleneck_tensor.get_shape().as_list()
     assert batch_size is None, 'We want to work with arbitrary batch size.'
     with tf.name_scope('input'):
-        bottleneck_input = tf.placeholder_with_default(
-            bottleneck_tensor,
-            shape=[batch_size, bottleneck_tensor_size],
-            name='BottleneckInputPlaceholder')
+
+        if not FLAGS.module_trainable:
+            bottleneck_input = tf.placeholder_with_default(
+                bottleneck_tensor,
+                shape=[batch_size, bottleneck_tensor_size],
+                name='BottleneckInputPlaceholder')
+        else:
+            bottleneck_input = bottleneck_tensor
 
         ground_truth_input = tf.placeholder(
             tf.int64, [batch_size], name='GroundTruthInput')
 
         ground_truth_input_top = tf.placeholder(
             tf.int64, [batch_size], name='GroundTruthInputTop')
+
+    # Add linear layer
+    # with tf.name_scope('final_linear'):
+    #     with tf.name_scope('weights'):
+    #         initial_value = tf.truncated_normal(
+    #             [bottleneck_tensor_size, bottleneck_tensor_size], stddev=0.001)
+    #         layer_weights = tf.Variable(initial_value, name='final_weights')
+    #
+    #     with tf.name_scope('biases'):
+    #         layer_biases = tf.Variable(tf.zeros([bottleneck_tensor_size]), name='final_biases')
+    #
+    #     with tf.name_scope('Wx_plus_b'):
+    #         bottleneck_output = tf.matmul(bottleneck_input, layer_weights) + layer_biases
+    #         bottleneck_output = tf.nn.relu(bottleneck_output)
 
     # Organizing the following ops so they are easier to see in TensorBoard.
     layer_name = 'final_retrain_ops'
@@ -801,7 +846,7 @@ def run_final_eval(train_session, module_spec, class_count, top_class_count, ima
                                       'testing', FLAGS.bottleneck_dir,
                                       FLAGS.image_dir, jpeg_data_tensor,
                                       decoded_image_tensor, resized_image_tensor,
-                                      bottleneck_tensor, FLAGS.tfhub_module))
+                                      bottleneck_tensor, FLAGS.tfhub_module, FLAGS.module_trainable))
 
     (eval_session, _, bottleneck_input, ground_truth_input, ground_truth_input_top, evaluation_step,
      evaluation_top_step, prediction, prediction_top) = build_eval_session(module_spec, class_count, top_class_count)
@@ -859,6 +904,9 @@ def build_eval_session(module_spec, class_count, top_class_count):
         evaluation_top_step, prediction_top = add_evaluation_step(final_top_tensor,
                                                                   ground_truth_input_top,
                                                                   'accuracy_top')
+
+        if FLAGS.module_trainable:
+            bottleneck_input = resized_input_tensor
 
     return (eval_sess, resized_input_tensor, bottleneck_input, ground_truth_input, ground_truth_input_top,
             evaluation_step, evaluation_top_step, prediction, prediction_top)
@@ -1039,6 +1087,9 @@ def main(_):
             class_count, top_class_count, FLAGS.final_tensor_name, FLAGS.final_top_tensor_name, bottleneck_tensor,
             wants_quantization, is_training=True)
 
+        if FLAGS.module_trainable:
+            bottleneck_input = resized_image_tensor
+
     # growth GPU config
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
@@ -1058,7 +1109,7 @@ def main(_):
              distorted_image_tensor) = add_input_distortions(
                 FLAGS.flip_left_right, FLAGS.random_crop, FLAGS.random_scale,
                 FLAGS.random_brightness, module_spec)
-        else:
+        elif not FLAGS.module_trainable:
             # We'll make sure we've calculated the 'bottleneck' image summaries and
             # cached them on disk.
             cache_bottlenecks(sess, image_lists, FLAGS.image_dir,
@@ -1099,7 +1150,8 @@ def main(_):
                     sess, image_lists, top_image_labels, FLAGS.train_batch_size, 'training',
                     FLAGS.bottleneck_dir, FLAGS.image_dir, jpeg_data_tensor,
                     decoded_image_tensor, resized_image_tensor, bottleneck_tensor,
-                    FLAGS.tfhub_module)
+                    FLAGS.tfhub_module, FLAGS.module_trainable)
+
             # Feed the bottlenecks and ground truth into the graph, and run a training
             # step. Capture training summaries for TensorBoard with the `merged` op.
             train_summary, _ = sess.run(
@@ -1131,7 +1183,7 @@ def main(_):
                         sess, image_lists, top_image_labels, FLAGS.validation_batch_size, 'validation',
                         FLAGS.bottleneck_dir, FLAGS.image_dir, jpeg_data_tensor,
                         decoded_image_tensor, resized_image_tensor, bottleneck_tensor,
-                        FLAGS.tfhub_module))
+                        FLAGS.tfhub_module, FLAGS.module_trainable))
                 # Run a validation step and capture training summaries for TensorBoard
                 # with the `merged` op.
                 validation_summary, validation_accuracy, validation_accuracy_top = sess.run(
@@ -1340,6 +1392,11 @@ if __name__ == '__main__':
       Which TensorFlow Hub module to use. For more options,
       search https://tfhub.dev for image feature vector modules.\
       """)
+    parser.add_argument(
+        '--module_trainable',
+        type=int,
+        default=0
+    )
     parser.add_argument(
         '--logging_verbosity',
         type=str,
