@@ -216,11 +216,16 @@ def create_module_graph(module_spec):
       wants_quantization: a boolean, whether the module has been instrumented
         with fake quantization ops.
     """
-    height, width = hub.get_expected_image_size(module_spec)
+    height, width = hub.get_expected_image_size(module_spec[0])
     with tf.Graph().as_default() as graph:
         resized_input_tensor = tf.placeholder(tf.float32, [None, height, width, 3])
-        m = hub.Module(module_spec, trainable=FLAGS.module_trainable)
-        bottleneck_tensor = m(resized_input_tensor)
+
+        bottleneck_tensor = []
+        for spec in module_spec:
+            m = hub.Module(spec, trainable=FLAGS.module_trainable)
+            bottleneck_tensor.append(m(resized_input_tensor))
+
+        bottleneck_tensor = tf.concat(bottleneck_tensor, axis=-1)
         wants_quantization = any(node.op in FAKE_QUANT_OPS
                                  for node in graph.as_graph_def().node)
     return graph, bottleneck_tensor, resized_input_tensor, wants_quantization
@@ -711,18 +716,18 @@ def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final
             tf.int64, [batch_size], name='GroundTruthInputTop')
 
     # Add linear layer
-    # with tf.name_scope('final_linear'):
-    #     with tf.name_scope('weights'):
-    #         initial_value = tf.truncated_normal(
-    #             [bottleneck_tensor_size, bottleneck_tensor_size], stddev=0.001)
-    #         layer_weights = tf.Variable(initial_value, name='final_weights')
-    #
-    #     with tf.name_scope('biases'):
-    #         layer_biases = tf.Variable(tf.zeros([bottleneck_tensor_size]), name='final_biases')
-    #
-    #     with tf.name_scope('Wx_plus_b'):
-    #         bottleneck_output = tf.matmul(bottleneck_input, layer_weights) + layer_biases
-    #         bottleneck_output = tf.nn.relu(bottleneck_output)
+    with tf.name_scope('final_linear'):
+        with tf.name_scope('weights'):
+            initial_value = tf.truncated_normal(
+                [bottleneck_tensor_size, bottleneck_tensor_size], stddev=0.001)
+            layer_weights = tf.Variable(initial_value, name='final_weights')
+
+        with tf.name_scope('biases'):
+            layer_biases = tf.Variable(tf.zeros([bottleneck_tensor_size]), name='final_biases')
+
+        with tf.name_scope('Wx_plus_b'):
+            bottleneck_output = tf.matmul(bottleneck_input, layer_weights) + layer_biases
+            bottleneck_output = tf.nn.relu(bottleneck_output)
 
     # Organizing the following ops so they are easier to see in TensorBoard.
     layer_name = 'final_retrain_ops'
@@ -738,7 +743,7 @@ def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final
             variable_summaries(layer_biases)
 
         with tf.name_scope('Wx_plus_b'):
-            logits = tf.matmul(bottleneck_input, layer_weights) + layer_biases
+            logits = tf.matmul(bottleneck_output, layer_weights) + layer_biases
             tf.summary.histogram('pre_activations', logits)
 
     final_tensor = tf.nn.softmax(logits, name=final_tensor_name)
@@ -757,7 +762,7 @@ def add_final_retrain_ops(class_count, top_class_count, final_tensor_name, final
             variable_summaries(top_layer_biases)
 
         with tf.name_scope('Wx_plus_b'):
-            top_logits = tf.matmul(bottleneck_input, top_layer_weights) + top_layer_biases
+            top_logits = tf.matmul(bottleneck_output, top_layer_weights) + top_layer_biases
             tf.summary.histogram('pre_activations', top_logits)
 
     final_top_tensor = tf.nn.softmax(top_logits, name=final_top_tensor_name)
@@ -823,7 +828,7 @@ def add_evaluation_step(result_tensor, ground_truth_tensor, layer_name):
     return evaluation_step, prediction
 
 
-def run_final_eval(train_session, module_spec, class_count, top_class_count, image_lists, top_image_labels,
+def run_final_eval(train_session, module_spec, module_name, class_count, top_class_count, image_lists, top_image_labels,
                    jpeg_data_tensor, decoded_image_tensor,
                    resized_image_tensor, bottleneck_tensor):
     """Runs a final evaluation on an eval graph using the test data set.
@@ -846,7 +851,7 @@ def run_final_eval(train_session, module_spec, class_count, top_class_count, ima
                                       'testing', FLAGS.bottleneck_dir,
                                       FLAGS.image_dir, jpeg_data_tensor,
                                       decoded_image_tensor, resized_image_tensor,
-                                      bottleneck_tensor, FLAGS.tfhub_module, FLAGS.module_trainable))
+                                      bottleneck_tensor, module_name, FLAGS.module_trainable))
 
     (eval_session, _, bottleneck_input, ground_truth_input, ground_truth_input_top, evaluation_step,
      evaluation_top_step, prediction, prediction_top) = build_eval_session(module_spec, class_count, top_class_count)
@@ -946,8 +951,8 @@ def add_jpeg_decoding(module_spec):
       Tensors for the node to feed JPEG data into, and the output of the
         preprocessing steps.
     """
-    input_height, input_width = hub.get_expected_image_size(module_spec)
-    input_depth = hub.get_num_image_channels(module_spec)
+    input_height, input_width = hub.get_expected_image_size(module_spec[0])
+    input_depth = hub.get_num_image_channels(module_spec[0])
     jpeg_data = tf.placeholder(tf.string, name='DecodeJPGInput')
     decoded_image = tf.image.decode_jpeg(jpeg_data, channels=input_depth)
     # Convert from full range of uint8 to range [0,1] of float32.
@@ -1076,7 +1081,8 @@ def main(_):
         FLAGS.random_brightness)
 
     # Set up the pre-trained graph.
-    module_spec = hub.load_module_spec(FLAGS.tfhub_module)
+    module_name = reduce(lambda x, y: x + '_' + y, FLAGS.tfhub_module)
+    module_spec = [hub.load_module_spec(ele) for ele in FLAGS.tfhub_module]
     graph, bottleneck_tensor, resized_image_tensor, wants_quantization = (
         create_module_graph(module_spec))
 
@@ -1115,7 +1121,7 @@ def main(_):
             cache_bottlenecks(sess, image_lists, FLAGS.image_dir,
                               FLAGS.bottleneck_dir, jpeg_data_tensor,
                               decoded_image_tensor, resized_image_tensor,
-                              bottleneck_tensor, FLAGS.tfhub_module)
+                              bottleneck_tensor, module_name)
 
         # Create the operations we need to evaluate the accuracy of our new layer.
         evaluation_step, _ = add_evaluation_step(final_tensor, ground_truth_input, 'accuracy')
@@ -1150,7 +1156,7 @@ def main(_):
                     sess, image_lists, top_image_labels, FLAGS.train_batch_size, 'training',
                     FLAGS.bottleneck_dir, FLAGS.image_dir, jpeg_data_tensor,
                     decoded_image_tensor, resized_image_tensor, bottleneck_tensor,
-                    FLAGS.tfhub_module, FLAGS.module_trainable)
+                    module_name, FLAGS.module_trainable)
 
             # Feed the bottlenecks and ground truth into the graph, and run a training
             # step. Capture training summaries for TensorBoard with the `merged` op.
@@ -1183,7 +1189,7 @@ def main(_):
                         sess, image_lists, top_image_labels, FLAGS.validation_batch_size, 'validation',
                         FLAGS.bottleneck_dir, FLAGS.image_dir, jpeg_data_tensor,
                         decoded_image_tensor, resized_image_tensor, bottleneck_tensor,
-                        FLAGS.tfhub_module, FLAGS.module_trainable))
+                        module_name, FLAGS.module_trainable))
                 # Run a validation step and capture training summaries for TensorBoard
                 # with the `merged` op.
                 validation_summary, validation_accuracy, validation_accuracy_top = sess.run(
@@ -1216,8 +1222,8 @@ def main(_):
 
         # We've completed all our training, so run a final test evaluation on
         # some new images we haven't used before.
-        run_final_eval(sess, module_spec, class_count, top_class_count, image_lists, top_image_labels,
-                       jpeg_data_tensor, decoded_image_tensor, resized_image_tensor,
+        run_final_eval(sess, module_spec, module_name, class_count, top_class_count, image_lists,
+                       top_image_labels, jpeg_data_tensor, decoded_image_tensor, resized_image_tensor,
                        bottleneck_tensor)
 
         # Write out the trained graph and labels with the weights stored as
@@ -1386,8 +1392,8 @@ if __name__ == '__main__':
     parser.add_argument(
         '--tfhub_module',
         type=str,
-        default=(
-            'https://tfhub.dev/google/imagenet/inception_v3/feature_vector/1'),
+        nargs='+',
+        default=['https://tfhub.dev/google/imagenet/inception_v3/feature_vector/3'],
         help="""\
       Which TensorFlow Hub module to use. For more options,
       search https://tfhub.dev for image feature vector modules.\
