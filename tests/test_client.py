@@ -7,7 +7,6 @@ __email__ = "liuhan132@foxmail.com"
 import argparse
 import requests
 import json
-import tensorflow as tf
 import numpy as np
 import base64
 import time
@@ -18,15 +17,16 @@ import time
 
 def load_labels(label_file):
     label = []
-    proto_as_ascii_lines = tf.gfile.GFile(label_file).readlines()
+    with open(label_file, 'r') as f:
+        proto_as_ascii_lines = f.readlines()
     for l in proto_as_ascii_lines:
         label.append(l.rstrip())
     return label
 
 
 if __name__ == "__main__":
-    file_name = "data/test_weed.jpg"
-    label_file = "outputs/weed-mix-sample/output_labels.txt"
+    file_name = "../data/test_weed.jpg"
+    label_file = "../outputs/weed-inaturalist-inception-inception_resnet/output_labels.txt"
     model_name = "default"
     model_version = 2
     enable_ssl = True

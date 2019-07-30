@@ -60,8 +60,8 @@ def read_tensor_from_image_list(file_names,
 
 
 if __name__ == '__main__':
-    test_image_path = 'data/test_weed.jpg'
-    output_path = 'outputs/weed-sample/'
+    test_image_path = '../data/test_weed.jpg'
+    output_path = '../outputs/weed-inaturalist-inception-inception_resnet/'
     model_file = output_path + "frozen_graph.pb"
     input_height = 299
     input_width = 299
@@ -70,7 +70,7 @@ if __name__ == '__main__':
     input_layer = "Placeholder"
     output_layer = "final_result"
     top_n = 3
-    test_iter_num = 100
+    test_iter_num = 20
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", help="image to be processed")

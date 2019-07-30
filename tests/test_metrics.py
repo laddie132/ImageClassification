@@ -9,7 +9,11 @@ import os
 import json
 import numpy as np
 import tensorflow as tf
+
+import sys
+sys.path.append('../')
 from utils.analysis_results import create_results_table
+
 
 """Evaluate the model on server"""
 
@@ -71,7 +75,7 @@ def load_labels(label_file):
 
 if __name__ == '__main__':
     image_root_path = '/home/lh/weed_photos_resize_mix/'
-    output_path = '/home/lh/WeedClassification/outputs/weed-mix-sample-genus/'
+    output_path = '/home/lh/WeedClassification/outputs/weed-inaturalist-inception-inception_resnet/'
     image_list_file = "../data/weed_image_lists_mix_oversample.json"
     meta_data_path = '../data/weed_meta_data.json'
     results_file = output_path + 'test_results.json'
