@@ -35,11 +35,8 @@ def map_eng_zh(meta_data_path):
         meta_data = json.load(f)
 
     map_names = {}
-    for k1, v1 in meta_data.items():
-        map_names[k1] = v1['name']
-
-        for k2, v2 in v1['classes'].items():
-            map_names[k2] = v2['name']
+    for k, v in meta_data.items():
+        map_names[k] = v['name']
 
     return map_names
 
@@ -95,8 +92,8 @@ def create_results_table(result_path, meta_data_path, output_path):
 
 if __name__ == '__main__':
     meta_data_path = '../data/weed_meta_data.json'
-    result_path = '../outputs/weed-mix-sample/test_results.json'
-    output_path = '../outputs/weed-mix-sample/results_table.xls'
+    result_path = '../outputs/weed-v2-inaturalist-inception-inception_resnet/test_results.json'
+    output_path = '../outputs/weed-v2-inaturalist-inception-inception_resnet/results_table.xls'
     # plot_acc_dataset(result_path)
     # plt.show()
 

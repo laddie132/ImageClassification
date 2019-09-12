@@ -12,6 +12,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 import collections
+import copy
 
 MAX_NUM_IMAGES_PER_CLASS = 2 ** 27 - 1  # ~134M
 
@@ -115,22 +116,23 @@ def oversample(image_lists, oversampling_num):
 
 
 def concat_image_lists(base_image_lists, append_image_lists):
-    new_image_lists = collections.OrderedDict()
-    for name, value in base_image_lists.items():
-        print('Concating label: ' + name)
-        if name in append_image_lists:
-            assert append_image_lists[name]['dir'] == value['dir']
+    new_image_lists = copy.deepcopy(base_image_lists)
 
-            value['training'].extend(append_image_lists[name]['training'])
+    for name, value in append_image_lists.items():
+        print('Concating label: ' + name)
+        if name in new_image_lists:
+            assert new_image_lists[name]['dir'] == value['dir']
+
+            new_image_lists[name]['training'].extend(value['training'])
             random.shuffle(value['training'])
 
-            value['testing'].extend(append_image_lists[name]['testing'])
+            new_image_lists[name]['testing'].extend(value['testing'])
             random.shuffle(value['testing'])
 
-            value['validation'].extend(append_image_lists[name]['validation'])
+            new_image_lists[name]['validation'].extend(value['validation'])
             random.shuffle(value['validation'])
-
-        new_image_lists[name] = value
+        else:
+            new_image_lists[name] = value
 
     return new_image_lists
 

@@ -13,9 +13,9 @@ from utils.dataset_fun import load_label_eng_zh
 
 
 def main():
-    out_path = '/home/lh/weed_photos_resize_mix_test/'
-    src_path = '/home/lh/weed_photos_resize_mix/'
-    image_lists_path = '../data/weed_image_lists_mix_oversample.json'
+    out_path = '/home/lh/weed_photos_resize_v2_test/'
+    src_path = '/home/lh/weed_photos_resize_v2/'
+    image_lists_path = '../data/weed_image_lists_oversample.json'
     meta_data_path = '../data/weed_meta_data.json'
 
     label_eng_zh = load_label_eng_zh(meta_data_path)
