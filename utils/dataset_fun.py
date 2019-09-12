@@ -25,14 +25,13 @@ def load_label_eng_zh(meta_data_path):
         meta_data = json.load(f)
 
     eng_zh = {}
-    for _, ele in meta_data.items():
-        for en_dirname, des in ele['classes'].items():
-            zh_label = des['name']
-            en_label = re.sub(r'[^a-z0-9]+', ' ', en_dirname.lower())
+    for en_dirname, des in meta_data.items():
+        zh_label = des['name']
+        en_label = re.sub(r'[^a-z0-9]+', ' ', en_dirname.lower())
 
-            print(en_label, zh_label)
+        print(en_label, zh_label)
 
-            eng_zh[en_label] = ele['name'] + '-' + zh_label
+        eng_zh[en_label] = zh_label
 
     return eng_zh
 
@@ -81,10 +80,7 @@ def fix_amount():
         amount = len(value['training']) + len(value['testing']) + len(value['validation'])
         dirname = value['dir']
         
-        if dirname in weed_meta_data['wheat']['classes']:
-            weed_meta_data['wheat']['classes'][dirname]['amount'] = amount
-        else:
-            weed_meta_data['corn']['classes'][dirname]['amount'] = amount
+        weed_meta_data[dirname]['amount'] = amount
 
     with open('../data/weed_meta_data_new.json', 'w') as wf:
         json.dump(weed_meta_data, wf, indent=2, ensure_ascii=False)
@@ -119,21 +115,9 @@ def analysis_amount(meta_data_path):
     with open(meta_data_path, 'r') as f:
         amount_data = json.load(f)
 
-    all_amount = []
-    for ele in amount_data:
-        ele_amount = []
-        for cs in amount_data[ele]['classes']:
-            ele_amount.append(int(amount_data[ele]['classes'][cs]['amount']))
+    all_amount = [int(ele[1]['amount']) for ele in amount_data.items()]
 
-        print('class: %s' % ele)
-        print('max amount: ', max(ele_amount))
-        print('min amount: ', min(ele_amount))
-        print('ave amount: ', sum(ele_amount) / len(ele_amount))
-        print('sum amount: ', sum(ele_amount))
-
-        all_amount += ele_amount
-
-    print('all:')
+    print('classes: ', len(all_amount))
     print('max amount: ', max(all_amount))
     print('min amount: ', min(all_amount))
     print('ave amount: ', sum(all_amount) / len(all_amount))
@@ -150,7 +134,7 @@ if __name__ == '__main__':
     # rename(meta_data_path)
     # fix_amount()
     get_amount(meta_data_path,
-               image_lists_path='../data/weed_image_lists_mix_dropped.json',
-               out_path='../data/weed_amount_mix_dropped.json')
+               image_lists_path='../data/weed_image_lists_dropped.json',
+               out_path='../data/weed_amount_dropped.json')
     # analysis_amount(meta_data_path)
     # plt.show()
