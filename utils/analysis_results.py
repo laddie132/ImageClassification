@@ -50,6 +50,7 @@ def create_results_table(result_path, meta_data_path, output_path):
 
     result_names = []
     result_accs = []
+    result_accs_top3 = []
     result_all_nums = []
     result_confuse_1 = []
     result_confuse_2 = []
@@ -57,6 +58,7 @@ def create_results_table(result_path, meta_data_path, output_path):
     for _, v in results.items():
         result_names.append(map_names[v['dir']])
         result_accs.append(round(v['acc'], 2))
+        result_accs_top3.append(round(v['acc_top3'], 2))
         result_all_nums.append(v['all_number'])
 
         confuse_vector = [0 for _ in range(len(results))]
@@ -84,9 +86,9 @@ def create_results_table(result_path, meta_data_path, output_path):
         else:
             result_confuse_3.append('None')
 
-    df = pd.DataFrame({'Name': result_names, 'Amount': result_all_nums, 'Acc(Top-3)': result_accs,
-                       'Top-1 Confuse': result_confuse_1, 'Top-2 Confuse': result_confuse_2,
-                       'Top-3 Confuse': result_confuse_3})
+    df = pd.DataFrame({'Name': result_names, 'Amount': result_all_nums, 'Acc': result_accs,
+                       'Acc(Top-3)': result_accs_top3, 'Top-1 Confuse': result_confuse_1,
+                       'Top-2 Confuse': result_confuse_2, 'Top-3 Confuse': result_confuse_3})
     df.to_excel(output_path, index=False)
 
 

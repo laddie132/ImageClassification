@@ -73,7 +73,28 @@ def load_labels(label_file):
     return label
 
 
-if __name__ == '__main__':
+def test_top_k(test_images, labels, results, sort_k, k):
+    top_k = sort_k[:, :k]
+
+    ground_truth_id = labels.index(k)
+    is_right = np.sum((top_k == ground_truth_id), axis=1) > 0
+
+    wrong_idx = np.where(is_right == 0)[0].tolist()
+
+    cur_wrong_imgs = {}
+    for wid in wrong_idx:
+        wname = test_images[wid]
+        wpredict = top_k[wid].tolist()
+        wpredict_label = list(map(lambda x: labels[x], wpredict))
+        wpredict_prob = list(map(lambda x: '%.2f' % results[wid, x], wpredict))
+
+        cur_wrong_imgs[wname] = dict(zip(wpredict_label, wpredict_prob))
+
+    acc = sum(is_right) / len(test_images)
+    return cur_wrong_imgs, acc
+
+
+def main():
     image_root_path = '/home/lh/weed_photos_resize_v2/'
     output_path = '/home/lh/WeedClassification/outputs/weed-v2-inaturalist-inception-inception_resnet/'
     image_list_file = "../data/weed_image_lists_oversample.json"
@@ -82,10 +103,6 @@ if __name__ == '__main__':
     model_file = output_path + "frozen_graph.pb"
     label_file = output_path + "output_labels.txt"
     results_table_file = output_path + 'results_table.xls'
-    input_height = 299
-    input_width = 299
-    input_mean = 0
-    input_std = 255
     input_layer = "Placeholder"
     output_layer = "final_result"
     top_n = 3
@@ -105,18 +122,6 @@ if __name__ == '__main__':
 
     if args.graph:
         model_file = args.graph
-    if args.image:
-        file_name = args.image
-    if args.labels:
-        label_file = args.labels
-    if args.input_height:
-        input_height = args.input_height
-    if args.input_width:
-        input_width = args.input_width
-    if args.input_mean:
-        input_mean = args.input_mean
-    if args.input_std:
-        input_std = args.input_std
     if args.input_layer:
         input_layer = args.input_layer
     if args.output_layer:
@@ -150,26 +155,16 @@ if __name__ == '__main__':
         results = sess.run(output_tensor,
                            {input_tensor: image_tensor})
 
-        top_k = np.argsort(-results, axis=1)[:, :top_n]
+        sort_k = np.argsort(-results, axis=1)
 
-        ground_truth_id = labels.index(k)
-        is_right = np.sum((top_k == ground_truth_id), axis=1) > 0
-
-        wrong_idx = np.where(is_right == 0)[0].tolist()
-
-        cur_wrong_imgs = {}
-        for wid in wrong_idx:
-            wname = test_images[wid]
-            wpredict = top_k[wid].tolist()
-            wpredict_label = list(map(lambda x: labels[x], wpredict))
-            wpredict_prob = list(map(lambda x: '%.2f' % results[wid, x], wpredict))
-
-            cur_wrong_imgs[wname] = dict(zip(wpredict_label, wpredict_prob))
+        # test on top-1 and top-3
+        cur_wrong_imgs, acc = test_top_k(test_images, labels, results, sort_k, k=1)
+        cur_wrong_imgs_top3, acc_top3 = test_top_k(test_images, labels, results, sort_k, k=3)
 
         cur_result['wrong_images'] = cur_wrong_imgs
-
-        acc = sum(is_right) / len(test_images)
+        cur_result['wrong_images_top3'] = cur_wrong_imgs_top3
         cur_result['acc'] = acc
+        cur_result['acc_top3'] = acc_top3
         cur_result['top-n'] = top_n
         cur_result['train_number'] = len(set(v['training']))
         cur_result['test_number'] = len(test_images)
@@ -184,3 +179,7 @@ if __name__ == '__main__':
         json.dump(output_results, wf, indent=2)
 
     create_results_table(results_file, meta_data_path, results_table_file)
+
+
+if __name__ == '__main__':
+    main()
