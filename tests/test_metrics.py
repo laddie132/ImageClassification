@@ -73,10 +73,9 @@ def load_labels(label_file):
     return label
 
 
-def test_top_k(test_images, labels, results, sort_k, k):
+def test_top_k(test_images, labels, ground_truth_id, results, sort_k, k):
     top_k = sort_k[:, :k]
 
-    ground_truth_id = labels.index(k)
     is_right = np.sum((top_k == ground_truth_id), axis=1) > 0
 
     wrong_idx = np.where(is_right == 0)[0].tolist()
@@ -97,7 +96,7 @@ def test_top_k(test_images, labels, results, sort_k, k):
 def main():
     image_root_path = '/home/lh/weed_photos_resize_v2/'
     output_path = '/home/lh/WeedClassification/outputs/weed-v2-inaturalist-inception-inception_resnet/'
-    image_list_file = "../data/weed_image_lists_oversample.json"
+    image_list_file = "../data/v2-1/weed_image_lists_oversample.json"
     meta_data_path = '../data/weed_meta_data.json'
     results_file = output_path + 'test_results.json'
     model_file = output_path + "frozen_graph.pb"
@@ -158,8 +157,9 @@ def main():
         sort_k = np.argsort(-results, axis=1)
 
         # test on top-1 and top-3
-        cur_wrong_imgs, acc = test_top_k(test_images, labels, results, sort_k, k=1)
-        cur_wrong_imgs_top3, acc_top3 = test_top_k(test_images, labels, results, sort_k, k=3)
+        ground_truth_id = labels.index(k)
+        cur_wrong_imgs, acc = test_top_k(test_images, labels, ground_truth_id, results, sort_k, k=1)
+        cur_wrong_imgs_top3, acc_top3 = test_top_k(test_images, labels, ground_truth_id, results, sort_k, k=3)
 
         cur_result['wrong_images'] = cur_wrong_imgs
         cur_result['wrong_images_top3'] = cur_wrong_imgs_top3
@@ -173,7 +173,7 @@ def main():
 
         output_results[k] = cur_result
 
-        print('%s with top-%d Acc: %.2f' % (k, top_n, acc * 100))
+        print('%s with acc=%.2f, top-%d-acc=%.2f' % (k, acc, top_n, acc_top3 * 100))
 
     with open(results_file, 'w') as wf:
         json.dump(output_results, wf, indent=2)

@@ -1415,7 +1415,7 @@ if __name__ == '__main__':
     setattr(FLAGS, 'output_top_labels', FLAGS.output_path + '/output_top_labels.txt')
     setattr(FLAGS, 'output_graph', FLAGS.output_path + '/frozen_graph.pb')
     setattr(FLAGS, 'summaries_dir', FLAGS.output_path + '/retrain_logs/')
-    setattr(FLAGS, 'bottleneck_dir', FLAGS.output_path + '/bottleneck/')
+    setattr(FLAGS, 'bottleneck_dir', 'outputs/bottleneck/')
     setattr(FLAGS, 'saved_model_dir', FLAGS.output_path + '/saved_model/')
 
     tf.app.run(main=main, argv=[sys.argv[0]] + unparsed)
