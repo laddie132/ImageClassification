@@ -73,7 +73,7 @@ def fix_amount():
     with open('../data/weed_meta_data.json', 'r') as f:
         weed_meta_data = json.load(f)
 
-    with open('../data/weed_image_lists.json', 'r') as f:
+    with open('../data/v3-1/weed_image_lists_base.json', 'r') as f:
         weed_image_lists = json.load(f)
 
     for name, value in weed_image_lists.items():
@@ -82,7 +82,7 @@ def fix_amount():
         
         weed_meta_data[dirname]['amount'] = amount
 
-    with open('../data/weed_meta_data_new.json', 'w') as wf:
+    with open('../data/weed_meta_data.json', 'w') as wf:
         json.dump(weed_meta_data, wf, indent=2, ensure_ascii=False)
 
 
@@ -129,12 +129,22 @@ def analysis_amount(meta_data_path):
     sns.boxplot(x=all_amount)
 
 
-if __name__ == '__main__':
+def main():
     meta_data_path = '../data/weed_meta_data.json'
     # rename(meta_data_path)
-    # fix_amount()
+
+    # 1. fix amount in meta data & analysis
+    fix_amount()
+    analysis_amount(meta_data_path)
+
+    # 2. get removed data & analysis
+    rem_path_prefix = '../data/v3-1/'
     get_amount(meta_data_path,
-               image_lists_path='../data/weed_image_lists_dropped.json',
-               out_path='../data/weed_amount_dropped.json')
-    # analysis_amount(meta_data_path)
-    # plt.show()
+               image_lists_path=rem_path_prefix + 'weed_image_lists_dropped.json',
+               out_path=rem_path_prefix + 'weed_amount_dropped.json')
+    analysis_amount(rem_path_prefix + 'weed_amount_dropped.json')
+    plt.show()
+
+
+if __name__ == '__main__':
+    main()

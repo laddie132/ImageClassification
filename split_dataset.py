@@ -184,6 +184,12 @@ if __name__ == '__main__':
         help='Set the output image lists dir'
     )
     parser.add_argument(
+        '--out_base_image_lists_dir',
+        type=str,
+        default='',
+        help='Set the output base image list dir'
+    )
+    parser.add_argument(
         '--image_dir',
         type=str,
         default='',
@@ -231,6 +237,8 @@ if __name__ == '__main__':
         with open(FLAGS.base_image_lists_dir, 'r') as f:
             base_image_lists = json.load(f)
         image_lists = concat_image_lists(base_image_lists, image_lists)
+
+    save_image_lists(image_lists, FLAGS.out_base_image_lists_dir)
 
     # filter with number of images
     if FLAGS.min_num > 0:
