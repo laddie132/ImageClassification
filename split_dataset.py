@@ -116,6 +116,9 @@ def oversample(image_lists, oversampling_num):
 
 
 def concat_image_lists(base_image_lists, append_image_lists):
+    if append_image_lists is None:
+        return base_image_lists
+
     new_image_lists = copy.deepcopy(base_image_lists)
 
     for name, value in append_image_lists.items():
@@ -229,8 +232,11 @@ if __name__ == '__main__':
     set_random_seed(FLAGS.seed)
 
     # Look at the folder structure, and create lists of all the images.
-    image_lists = create_image_lists(FLAGS.image_dir, FLAGS.testing_percentage,
-                                     FLAGS.validation_percentage)
+    if FLAGS.image_dir != '':
+        image_lists = create_image_lists(FLAGS.image_dir, FLAGS.testing_percentage,
+                                         FLAGS.validation_percentage)
+    else:
+        image_lists = None
 
     # concat other image lists
     if FLAGS.base_image_lists_dir != '':
@@ -238,7 +244,9 @@ if __name__ == '__main__':
             base_image_lists = json.load(f)
         image_lists = concat_image_lists(base_image_lists, image_lists)
 
-    save_image_lists(image_lists, FLAGS.out_base_image_lists_dir)
+    # save when building new dataset
+    if FLAGS.out_base_image_lists_dir != '':
+        save_image_lists(image_lists, FLAGS.out_base_image_lists_dir)
 
     # filter with number of images
     if FLAGS.min_num > 0:

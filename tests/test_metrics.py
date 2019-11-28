@@ -94,9 +94,9 @@ def test_top_k(test_images, labels, ground_truth_id, results, sort_k, k):
 
 
 def main():
-    image_root_path = '/home/lh/weed_photos_resize_v2/'
-    output_path = '/home/lh/WeedClassification/outputs/weed-v2-inaturalist-inception-inception_resnet/'
-    image_list_file = "../data/v2-1/weed_image_lists_oversample.json"
+    image_root_path = '/home/lh/weed_photos_resize_v3/'
+    output_path = '/home/lh/WeedClassification/outputs/weed-v3-1-inaturalist-inception/'
+    image_list_file = "../data/v3-1/weed_image_lists_oversample.json"
     meta_data_path = '../data/weed_meta_data.json'
     results_file = output_path + 'test_results.json'
     model_file = output_path + "frozen_graph.pb"

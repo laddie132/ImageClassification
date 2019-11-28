@@ -2,7 +2,7 @@
   "model_config_list": [
     {
       "name": "default",
-      "base_path": "outputs/weed-v2-inaturalist-inception-inception_resnet/saved_model_b64",
+      "base_path": "outputs/weed-v3-1-inaturalist-inception/saved_model_b64",
       "platform": "tensorflow"
     }
   ]
