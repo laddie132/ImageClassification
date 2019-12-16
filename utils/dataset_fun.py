@@ -65,15 +65,15 @@ def rename(meta_data_path):
     print('success')
 
 
-def fix_amount():
+def fix_amount(in_path, image_list_path):
     """
     fix amount error in meta data
     :return:
     """
-    with open('../data/weed_meta_data.json', 'r') as f:
+    with open(in_path, 'r') as f:
         weed_meta_data = json.load(f)
 
-    with open('../data/v3-1/weed_image_lists_base.json', 'r') as f:
+    with open(image_list_path, 'r') as f:
         weed_image_lists = json.load(f)
 
     for name, value in weed_image_lists.items():
@@ -82,7 +82,7 @@ def fix_amount():
         
         weed_meta_data[dirname]['amount'] = amount
 
-    with open('../data/weed_meta_data.json', 'w') as wf:
+    with open(in_path, 'w') as wf:
         json.dump(weed_meta_data, wf, indent=2, ensure_ascii=False)
 
 
@@ -134,11 +134,12 @@ def main():
     # rename(meta_data_path)
 
     # 1. fix amount in meta data & analysis
-    fix_amount()
+    fix_amount(in_path='../data/weed_meta_data.json',
+               image_list_path='../data/v4/weed_image_lists_base.json')
     analysis_amount(meta_data_path)
 
     # 2. get removed data & analysis
-    rem_path_prefix = '../data/v3-1/'
+    rem_path_prefix = '../data/v4/'
     get_amount(meta_data_path,
                image_lists_path=rem_path_prefix + 'weed_image_lists_dropped.json',
                out_path=rem_path_prefix + 'weed_amount_dropped.json')
